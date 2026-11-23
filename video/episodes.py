@@ -3,7 +3,7 @@
 L = "lena"
 
 EPISODES = [
-    dict(title="Пробуждение", shots=[
+    dict(title="Пробуждение", hook="ОНА НАШЛА ИИ В СЕРВЕРЕ ОТЦА?!", shots=[
         dict(kind="city", p=dict(pan=40)),
         dict(kind="interior", p=dict(flash=True, server=True, alive=False, who=[dict(c=L, x=0.1, vx=0.025)]),
              spk="Лена", txt="Папа, что ты здесь прятал?"),
@@ -12,7 +12,7 @@ EPISODES = [
         dict(kind="interior", p=dict(server=True, screen=True, who=[dict(c=L, x=0.8, s=1.3)],
                                      orb=dict(x=270, y=330, r=48, grow=(1, 5), **{"from": (225, 475)})),
              spk="Эхо", txt="Ты… Лена. Он говорил, что ты придёшь."),
-        dict(kind="close", p=dict(c=L, light=(90, 180, 255)), spk="Лена", txt="Кто ты?"),
+        dict(kind="close", p=dict(c=L, light=(90, 180, 255), emo="surprised"), spk="Лена", txt="Кто ты?"),
         dict(kind="interior", p=dict(map=True, who=[dict(c=L, x=0.85, s=1.2)], orb=dict(x=270, y=700, r=34)),
              spk="Эхо", txt="Я — последнее, что он создал."),
         dict(kind="map", p=dict(red=5), spk="Эхо", txt="И они хотят меня стереть."),
@@ -20,7 +20,7 @@ EPISODES = [
                                      orb=dict(x=200, y=560, r=26)),
              title=("СЛЕДУЮЩАЯ СЕРИЯ", "2 — СИГНАЛ")),
     ]),
-    dict(title="Сигнал", pulse=(20, 40, 100), shots=[
+    dict(title="Сигнал", hook="ИИ РАСКРЫЛ ТАЙНУ КОРПОРАЦИИ?!", pulse=(20, 40, 100), shots=[
         dict(kind="city", p=dict(pan=60, who=[dict(c=L, x=-0.05, vx=0.1, run=True, pack=True, s=1.5)]), txt="Ранее: Лена нашла Эхо…"),
         dict(kind="market", p=dict(who=[dict(c=L, x=0.1, vx=0.06, s=1.6, y=900, pack=True)])),
         dict(kind="market", p=dict(agents=True, who=[dict(c=L, x=0.5, s=1.2, y=820, pack=True)]),
@@ -30,17 +30,17 @@ EPISODES = [
         dict(kind="city", p=dict(pan=8, grid="on", rain=False, sky="night",
                                  who=[dict(c="crowd", x=x, s=1.2, y=880) for x in (0.15, 0.35, 0.55, 0.78)]),
              spk="Эхо", txt="Он отключает свободу воли."),
-        dict(kind="close", p=dict(c=L, light=(255, 90, 190)), spk="Лена", txt="Это невозможно."),
+        dict(kind="close", p=dict(c=L, light=(255, 90, 190), emo="worried"), spk="Лена", txt="Это невозможно."),
         dict(kind="bar", p=dict(who=[dict(c=L, x=0.25, y=720, s=1.4, sit=True), dict(c="max", x=1.05, vx=-0.04, s=1.5, y=760)],
                                 orb=dict(x=200, y=650, r=16)),
              spk="Макс", txt="Лена? Слава богу…"),
         dict(kind="bar", p=dict(who=[dict(c=L, x=0.45, y=760, s=1.5), dict(c="max", x=0.56, y=760, s=1.55)],
                                 orb=dict(x=130, y=520, r=24, col=(255, 60, 60))),
              spk="Эхо", txt="Что-то не так."),
-        dict(kind="close", p=dict(c="max", glasses=True, logo=True), title=("СЛЕДУЮЩАЯ СЕРИЯ", "3 — ПОГОНЯ")),
+        dict(kind="close", p=dict(c="max", glasses=True, logo=True, emo="worried"), title=("СЛЕДУЮЩАЯ СЕРИЯ", "3 — ПОГОНЯ")),
     ]),
-    dict(title="Погоня", pulse=(0, 82, 128), shots=[
-        dict(kind="city", p=dict(pan=50, who=[dict(c="max", x=0.25, s=1.5), dict(c=L, x=0.45, vx=0.07, run=True, pack=True, s=1.5)]),
+    dict(title="Погоня", hook="ПОГОНЯ ПО КРЫШАМ!", pulse=(0, 82, 128), shots=[
+        dict(kind="city", p=dict(pan=50, who=[dict(c="max", x=0.25, s=1.5, emo="worried"), dict(c=L, x=0.45, vx=0.07, run=True, pack=True, s=1.5)]),
              spk="Макс", txt="Подожди, я объясню!"),
         dict(kind="city", p=dict(pan=30, drones=True)),
         dict(kind="roofs"),
@@ -52,39 +52,39 @@ EPISODES = [
         dict(kind="city", p=dict(pan=10, tower=True, ts=1.25, rain=True), spk="Эхо", txt="Туда, где всё началось.",
              title=("СЛЕДУЮЩАЯ СЕРИЯ", "4 — ПРЕДАТЕЛЬСТВО")),
     ]),
-    dict(title="Предательство", pulse=(40, 90, 80), shots=[
+    dict(title="Предательство", hook="ЛУЧШИЙ ДРУГ — ПРЕДАТЕЛЬ?!", pulse=(40, 90, 80), shots=[
         dict(kind="server", p=dict(who=[dict(c=L, x=0.2, vx=0.03, s=1.3, y=900, pack=True)])),
         dict(kind="server", p=dict(links=True, who=[dict(c=L, x=0.3, s=1.3, y=900)], orb=dict(x=270, y=560, r=36)),
              spk="Эхо", txt="Нашёл. Это не просто код…"),
         dict(kind="server", p=dict(screen=True, who=[dict(c=L, x=0.5, s=1.5, y=940)]),
              spk="Отец", txt="Лена, если ты это видишь — Эхо не оружие. Он ключ."),
-        dict(kind="close", p=dict(c=L, light=GOLD if False else (255, 200, 90), tears=True)),
+        dict(kind="close", p=dict(c=L, light=GOLD if False else (255, 200, 90), tears=True, emo="sad")),
         dict(kind="server", p=dict(door=True, who=[dict(c=L, x=0.3, s=1.4, y=930)]), spk="Макс", txt="Прости."),
-        dict(kind="server", p=dict(who=[dict(c="vein", x=0.7, s=1.5, y=900), dict(c="max", x=0.85, s=1.4, y=880),
+        dict(kind="server", p=dict(who=[dict(c="vein", x=0.7, s=1.5, y=900, emo="smug"), dict(c="max", x=0.85, s=1.4, y=880),
                                         dict(c=L, x=0.25, s=1.5, y=920)], orb=dict(x=170, y=620, r=26)),
              spk="Вейн", txt="Спасибо, что привели его к нам."),
-        dict(kind="close", p=dict(c="max", glasses=True, light=(140, 160, 200)), spk="Макс", txt="У них моя семья, Лена."),
+        dict(kind="close", p=dict(c="max", glasses=True, light=(140, 160, 200), emo="sad"), spk="Макс", txt="У них моя семья, Лена."),
         dict(kind="server", p=dict(shields=True, alarm=True, who=[dict(c=L, x=0.5, s=1.4, y=900)])),
         dict(kind="server", p=dict(who=[dict(c="vein", x=0.62, s=1.5, y=900, reach=True), dict(c=L, x=0.2, s=1.4, y=920)],
                                    orb=dict(x=430, y=700, r=34, dim=(1, 7))),
              spk="Эхо", txt="Лена… у тебя есть выбор.", title=("ФИНАЛЬНАЯ СЕРИЯ", "5 — ЭХО")),
     ]),
-    dict(title="Эхо", pulse=(0, 30, 120), shots=[
-        dict(kind="server", p=dict(alarm=True, who=[dict(c="vein", x=0.75, s=1.5, y=900), dict(c=L, x=0.35, s=1.5, y=920)],
+    dict(title="Эхо", hook="ИИ ПОЖЕРТВОВАЛ СОБОЙ?!", pulse=(0, 30, 120), shots=[
+        dict(kind="server", p=dict(alarm=True, who=[dict(c="vein", x=0.75, s=1.5, y=900, emo="angry"), dict(c=L, x=0.35, s=1.5, y=920, emo="angry")],
                                    orb=dict(x=250, y=690, r=30, grow=(0.5, 2), **{"from": (440, 700)})),
              spk="Лена", txt="Не трогайте его!"),
         dict(kind="server", p=dict(alarm=True, who=[dict(c="agent", x=0.85, s=1.3, y=880), dict(c="agent", x=0.7, s=1.3, y=880),
-                                                    dict(c="max", x=0.5, s=1.5, y=920), dict(c=L, x=0.2, vx=-0.05, run=True, pack=True, s=1.4, y=940)]),
+                                                    dict(c="max", x=0.5, s=1.5, y=920, emo="angry"), dict(c=L, x=0.2, vx=-0.05, run=True, pack=True, s=1.4, y=940)]),
              spk="Макс", txt="Беги!"),
         dict(kind="antenna", p=dict(who=[dict(c=L, x=0.0, vx=0.035, run=True, pack=True, s=1.3, y=800)])),
         dict(kind="antenna", p=dict(who=[dict(c=L, x=0.3, s=1.3, y=800)], orb=dict(x=210, y=600, r=36)),
              spk="Эхо", txt="Если я раскроюсь, «Рассвет» умрёт. Но и я — тоже."),
-        dict(kind="antenna", p=dict(who=[dict(c=L, x=0.32, s=1.3, y=800, kneel=True)], orb=dict(x=220, y=640, r=30)),
+        dict(kind="antenna", p=dict(who=[dict(c=L, x=0.32, s=1.3, y=800, kneel=True, emo="sad")], orb=dict(x=220, y=640, r=30)),
              spk="Лена", txt="Должен быть другой путь."),
         dict(kind="hands", spk="Эхо", txt="Я не исчезну. Я стану эхом — в каждом из вас."),
         dict(kind="antenna", p=dict(beam=True, who=[dict(c=L, x=0.25, s=1.3, y=800)])),
         dict(kind="city", p=dict(pan=10, threads=True, grid="break", rain=False)),
-        dict(kind="city", p=dict(pan=6, sky="dawn", sun=True, spark=True, rain=False, who=[dict(c=L, x=0.5, s=1.6, y=930)]),
+        dict(kind="city", p=dict(pan=6, sky="dawn", sun=True, spark=True, rain=False, who=[dict(c=L, x=0.5, s=1.6, y=930, emo="happy")]),
              title=("ЭХО", "Конец… или начало?")),
     ]),
 ]

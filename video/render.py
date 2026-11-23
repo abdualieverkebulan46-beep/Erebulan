@@ -10,7 +10,7 @@ from functools import lru_cache
 from multiprocessing import Pool
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from episodes import EPISODES
 
@@ -22,6 +22,8 @@ F_NAME = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 23)
 F_BIG = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 110)
 F_MID = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 34)
 F_SM = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 22)
+F_CAP = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 46)
+F_HOOK = ImageFont.truetype(FD + "DejaVuSans-Bold.ttf", 38)
 
 BLUE, GOLD, RED = (90, 180, 255), (255, 200, 90), (255, 50, 60)
 CHARS = {
@@ -162,6 +164,19 @@ def draw_orb(img, d, cx, cy, r, t, col=BLUE, threads=True, lvl=10):
             d.line(pts, fill=GOLD + (int(140 * lvl / 10),), width=2)
     sp = orb_sprite(rr, col, lvl)
     img.paste(sp, (int(cx - sp.width / 2), int(cy - sp.height / 2)), sp)
+    if threads and r >= 10 and lvl >= 4:  # мордочка Эхо
+        ec = (20, 40, 90) if col == BLUE else (90, 10, 20)
+        for sg in (-1, 1):
+            ex_ = cx + sg * 0.32 * rr
+            if (t % 3.7) < 0.13:
+                d.line([(ex_ - 0.12 * rr, cy - 0.05 * rr), (ex_ + 0.12 * rr, cy - 0.05 * rr)], fill=ec, width=max(2, int(0.07 * rr)))
+            else:
+                d.ellipse([ex_ - 0.1 * rr, cy - 0.24 * rr, ex_ + 0.1 * rr, cy + 0.12 * rr], fill=ec)
+        if talking("echo", t):
+            o = abs(math.sin(t * 15)) * 0.16 * rr + 0.04 * rr
+            d.ellipse([cx - 0.12 * rr, cy + 0.32 * rr - o / 2, cx + 0.12 * rr, cy + 0.32 * rr + o / 2], fill=ec)
+        else:
+            d.arc([cx - 0.14 * rr, cy + 0.12 * rr, cx + 0.14 * rr, cy + 0.36 * rr], 20, 160, fill=ec, width=max(2, int(0.05 * rr)))
 
 
 def limb(d, pts, b, r, w):
@@ -169,50 +184,185 @@ def limb(d, pts, b, r, w):
     d.line(pts, fill=b, width=w, joint="curve")
 
 
-def person(img, d, x, y, s, ch, t=0.0, run=False, kneel=False, reach=False, pack=False, sit=False):
-    c = CHARS[ch]
-    b, r = c["body"], c["rim"]
-    w = max(3, int(10 * s))
-    if pack:
-        draw_orb(img, d, x - 26 * s, y - 112 * s, 9 * s, t, threads=False)
-    hip = (x, y - 74 * s)
-    if kneel or sit:
-        limb(d, [hip, (x + 34 * s, y - 70 * s if sit else y - 30 * s), (x + 34 * s, y)], b, r, w)
-        limb(d, [hip, (x - 20 * s, y - 20 * s), (x - 50 * s, y)], b, r, w) if kneel else None
-        y_off = 0
-    elif run:
-        ph = math.sin(t * 13)
-        for sg in (1, -1):
-            limb(d, [hip, (x + sg * ph * 22 * s, y - 38 * s), (x + sg * ph * 36 * s, y)], b, r, w)
-        y_off = 0
+OUTL = (28, 20, 44)
+SKIN = (255, 218, 180)
+LOOK = {
+    "lena": dict(hair=(28, 26, 36), top=(52, 150, 86), pants=(44, 44, 66), style="bob", scar=True),
+    "max": dict(hair=(226, 112, 40), top=(128, 128, 140), pants=(52, 46, 62), style="spiky", beard=True, glasses=True),
+    "vein": dict(hair=(196, 196, 206), top=(242, 242, 246), pants=(226, 226, 232), style="bun"),
+    "father": dict(hair=(206, 206, 210), top=(146, 98, 62), pants=(72, 62, 56), style="short", mustache=True),
+    "agent": dict(hair=(18, 18, 24), top=(22, 22, 28), pants=(22, 22, 28), style="hood", mask=True),
+}
+CROWD_TOPS = [(200, 80, 80), (80, 120, 200), (230, 180, 60), (120, 80, 160), (70, 160, 150), (220, 120, 170)]
+CROWD_HAIR = [(30, 25, 25), (120, 70, 30), (220, 190, 100), (60, 40, 20)]
+SPEAK = dict(char=None, t0=0.0, t1=0.0)
+CHAR_OF = {"Лена": "lena", "Макс": "max", "Вейн": "vein", "Отец": "father", "Эхо": "echo"}
+
+
+def talking(ch, t):
+    return SPEAK["char"] == ch and SPEAK["t0"] < t < SPEAK["t1"]
+
+
+def lighter(c, k=0.25):
+    return tuple(int(v + (255 - v) * k) for v in c)
+
+
+def person(img, d, x, y, s, ch, t=0.0, run=False, kneel=False, reach=False, pack=False, sit=False,
+           emo="neutral", talk=None, seed=0):
+    """Мультяшный персонаж: большая круглая голова, лицо, причёска, одежда, толстый контур. y — уровень ног."""
+    if ch == "crowd":
+        r = random.Random(seed)
+        L = dict(hair=r.choice(CROWD_HAIR), top=r.choice(CROWD_TOPS), pants=(50, 50, 70), style=r.choice(["short", "bob", "spiky"]))
     else:
-        for sg in (1, -1):
-            limb(d, [hip, (x + sg * 9 * s, y - 36 * s), (x + sg * 11 * s, y)], b, r, w)
-        y_off = 0
-    sh_y = y - 140 * s + y_off
-    torso = [(x - 22 * s, sh_y), (x + 22 * s, sh_y), (x + 16 * s, y - 70 * s), (x - 16 * s, y - 70 * s)]
-    d.polygon(torso, fill=b, outline=r, width=max(1, int(2.4 * s)))
+        L = LOOK[ch]
+    if talk is None:
+        talk = talking(ch, t)
+    ow = max(2, int(3.2 * s))
+    R = 48 * s
+    hip_y, sh_y = y - 52 * s, y - 122 * s
+    hx, hy = x, y - 172 * s
+    if run:
+        hy += abs(math.sin(t * 13)) * -4 * s
+
+    def lim(pts, col, w):
+        d.line(pts, fill=OUTL, width=int(w + 2 * ow), joint="curve")
+        for p_ in (pts[0], pts[-1]):
+            rr = (w + 2 * ow) / 2
+            d.ellipse([p_[0] - rr, p_[1] - rr, p_[0] + rr, p_[1] + rr], fill=OUTL)
+        d.line(pts, fill=col, width=int(w), joint="curve")
+
+    def shoe(fx, fy):
+        d.ellipse([fx - 13 * s, fy - 9 * s, fx + 13 * s, fy + 4 * s], fill=(46, 34, 34), outline=OUTL, width=ow)
+
+    def hand(px, py):
+        d.ellipse([px - 8 * s, py - 8 * s, px + 8 * s, py + 8 * s], fill=SKIN, outline=OUTL, width=ow)
+
+    if pack:
+        draw_orb(img, d, x - 42 * s, y - 108 * s, 14 * s, t, threads=False)
+    lw = 15 * s
     if run:
         ph = math.sin(t * 13)
         for sg in (1, -1):
-            limb(d, [(x + sg * 18 * s, sh_y + 6 * s), (x - sg * ph * 26 * s, sh_y + 40 * s),
-                     (x - sg * ph * 30 * s, sh_y + 62 * s)], b, r, int(w * 0.8))
+            f = (x + sg * ph * 30 * s, y - 4 * s)
+            lim([(x + sg * 8 * s, hip_y), (x + sg * ph * 18 * s, y - 28 * s), f], L["pants"], lw)
+            shoe(*f)
+    elif kneel:
+        lim([(x - 8 * s, hip_y), (x - 12 * s, y - 8 * s), (x - 42 * s, y - 6 * s)], L["pants"], lw)
+        lim([(x + 8 * s, hip_y), (x + 34 * s, hip_y + 4 * s), (x + 34 * s, y - 6 * s)], L["pants"], lw)
+        shoe(x + 38 * s, y - 4 * s)
+    elif sit:
+        for sg in (1, -1):
+            lim([(x + sg * 8 * s, hip_y), (x + sg * 8 * s + 34 * s, hip_y), (x + sg * 8 * s + 34 * s, y - 6 * s)], L["pants"], lw)
+            shoe(x + sg * 8 * s + 38 * s, y - 4 * s)
     else:
-        limb(d, [(x - 20 * s, sh_y + 6 * s), (x - 27 * s, sh_y + 40 * s), (x - 25 * s, sh_y + 68 * s)], b, r, int(w * 0.8))
-        if reach:
-            limb(d, [(x + 20 * s, sh_y + 6 * s), (x + 50 * s, sh_y + 14 * s), (x + 78 * s, sh_y + 16 * s)], b, r, int(w * 0.8))
+        for sg in (1, -1):
+            lim([(x + sg * 11 * s, hip_y), (x + sg * 12 * s, y - 8 * s)], L["pants"], lw)
+            shoe(x + sg * 14 * s, y - 4 * s)
+    # руки (сзади тела не рисуем — они поверх, «дугой», как в мультфильмах)
+    d.rounded_rectangle([x - 31 * s, sh_y, x + 31 * s, hip_y + 8 * s], radius=int(18 * s), fill=L["top"], outline=OUTL, width=ow)
+    if ch == "lena":
+        d.line([(x, sh_y + 6 * s), (x, hip_y + 4 * s)], fill=lighter(L["top"], 0.45), width=max(1, int(2 * s)))
+        d.rectangle([x - 31 * s + ow, hip_y - 2 * s, x + 31 * s - ow, hip_y + 4 * s], fill=lighter(L["top"], -0.0))
+    elif ch in ("vein", "max", "agent", "father"):
+        lap = (255, 255, 255) if ch == "agent" else lighter(L["top"], 0.35)
+        d.polygon([(x - 13 * s, sh_y + 2 * s), (x, sh_y + 30 * s), (x + 13 * s, sh_y + 2 * s)], fill=lap, outline=OUTL)
+        if ch == "agent":
+            d.line([(x, sh_y + 12 * s), (x, sh_y + 30 * s)], fill=(20, 20, 26), width=max(2, int(4 * s)))
+    else:
+        for sg in (-1, 1):
+            d.line([(x + sg * 8 * s, sh_y + 6 * s), (x + sg * 9 * s, sh_y + 30 * s)], fill=(255, 255, 255), width=max(1, int(2.5 * s)))
+        d.rounded_rectangle([x - 18 * s, sh_y + 40 * s, x + 18 * s, hip_y], radius=int(5 * s), outline=OUTL, width=max(1, ow - 1))
+    aw = 12 * s
+    if run:
+        ph = math.sin(t * 13)
+        for sg in (1, -1):
+            e_ = (x + sg * 30 * s - sg * 0 - ph * sg * 22 * s, sh_y + 56 * s)
+            lim([(x + sg * 26 * s, sh_y + 10 * s), (x + sg * 40 * s - ph * sg * 10 * s, sh_y + 34 * s), e_], L["top"], aw)
+            hand(*e_)
+    else:
+        for sg in (-1, 1):
+            if reach and sg == 1:
+                e_ = (x + 88 * s, sh_y + 18 * s)
+                lim([(x + 26 * s, sh_y + 10 * s), (x + 58 * s, sh_y + 16 * s), e_], L["top"], aw)
+            else:
+                e_ = (x + sg * 38 * s, hip_y - 4 * s)
+                lim([(x + sg * 26 * s, sh_y + 10 * s), (x + sg * 46 * s, sh_y + 40 * s), e_], L["top"], aw)
+            hand(*e_)
+    # голова
+    st = L["style"]
+    if st == "bob":
+        d.rounded_rectangle([hx - 1.14 * R, hy - 1.05 * R, hx + 1.14 * R, hy + 0.8 * R], radius=int(0.6 * R), fill=L["hair"], outline=OUTL, width=ow)
+    if st == "hood":
+        d.ellipse([hx - 1.2 * R, hy - 1.2 * R, hx + 1.2 * R, hy + 1.1 * R], fill=L["hair"], outline=OUTL, width=ow)
+    if st == "bun":
+        d.ellipse([hx - 0.36 * R, hy - 1.5 * R, hx + 0.36 * R, hy - 0.82 * R], fill=L["hair"], outline=OUTL, width=ow)
+    if L.get("mask"):
+        d.ellipse([hx - 0.85 * R, hy - 0.85 * R, hx + 0.85 * R, hy + 0.9 * R], fill=(236, 236, 242), outline=OUTL, width=ow)
+        for sg in (-1, 1):
+            d.polygon([(hx + sg * 0.12 * R, hy + 0.02 * R), (hx + sg * 0.55 * R, hy - 0.1 * R), (hx + sg * 0.5 * R, hy + 0.08 * R)], fill=(10, 10, 14))
+        if int(t * 3 + seed) % 2:
+            d.ellipse([hx - 0.05 * R, hy + 0.45 * R, hx + 0.05 * R, hy + 0.55 * R], fill=RED)
+        return hx, hy, R
+    d.ellipse([hx - R, hy - R, hx + R, hy + R], fill=SKIN, outline=OUTL, width=ow)
+    if st == "bob":
+        d.chord([hx - 1.06 * R, hy - 1.14 * R, hx + 1.06 * R, hy + 0.5 * R], 180, 360, fill=L["hair"], outline=OUTL, width=ow)
+    elif st == "spiky":
+        for k in range(5):
+            a = math.radians(222 + k * 24)
+            a1, a2 = a - 0.26, a + 0.26
+            tip = (hx + math.cos(a) * 1.4 * R, hy + math.sin(a) * 1.38 * R)
+            d.polygon([(hx + math.cos(a1) * 0.85 * R, hy + math.sin(a1) * 0.85 * R), tip,
+                       (hx + math.cos(a2) * 0.85 * R, hy + math.sin(a2) * 0.85 * R)], fill=L["hair"], outline=OUTL, width=ow)
+        d.chord([hx - 1.04 * R, hy - 1.1 * R, hx + 1.04 * R, hy + 0.3 * R], 180, 360, fill=L["hair"], outline=OUTL, width=ow)
+    else:
+        d.chord([hx - 1.03 * R, hy - 1.07 * R, hx + 1.03 * R, hy + 0.1 * R], 180, 360, fill=L["hair"], outline=OUTL, width=ow)
+    # лицо
+    ex, ey = 0.36 * R, hy + 0.1 * R
+    blink = ((t + seed * 0.37) % 3.3) < 0.13
+    for sg in (-1, 1):
+        cx = hx + sg * ex
+        if blink:
+            d.line([(cx - 0.12 * R, ey), (cx + 0.12 * R, ey)], fill=OUTL, width=max(2, int(0.06 * R)))
+        elif emo == "surprised":
+            d.ellipse([cx - 0.17 * R, ey - 0.2 * R, cx + 0.17 * R, ey + 0.2 * R], fill=(255, 255, 255), outline=OUTL, width=max(2, int(0.05 * R)))
+            d.ellipse([cx - 0.07 * R, ey - 0.07 * R, cx + 0.07 * R, ey + 0.07 * R], fill=OUTL)
         else:
-            limb(d, [(x + 20 * s, sh_y + 6 * s), (x + 27 * s, sh_y + 40 * s), (x + 25 * s, sh_y + 68 * s)], b, r, int(w * 0.8))
-    hx, hy = x, sh_y - 22 * s
-    d.ellipse([hx - 15 * s, hy - 18 * s, hx + 15 * s, hy + 16 * s], fill=b, outline=r, width=max(1, int(2.4 * s)))
-    if ch == "agent":
-        d.ellipse([hx - 11 * s, hy - 13 * s, hx + 11 * s, hy + 12 * s], fill=(232, 232, 238))
-        d.line([(hx - 7 * s, hy - 2 * s), (hx - 2 * s, hy - 2 * s)], fill=(10, 10, 10), width=max(1, int(2 * s)))
-        d.line([(hx + 2 * s, hy - 2 * s), (hx + 7 * s, hy - 2 * s)], fill=(10, 10, 10), width=max(1, int(2 * s)))
-    elif ch == "vein":
-        d.ellipse([hx - 9 * s, hy - 30 * s, hx + 9 * s, hy - 13 * s], fill=(170, 170, 180), outline=r)
-    elif ch == "max":
-        d.chord([hx - 13 * s, hy - 4 * s, hx + 13 * s, hy + 20 * s], 0, 180, fill=(200, 100, 40))
+            d.ellipse([cx - 0.1 * R, ey - 0.16 * R, cx + 0.1 * R, ey + 0.16 * R], fill=OUTL)
+            d.ellipse([cx - 0.06 * R, ey - 0.11 * R, cx - 0.0 * R, ey - 0.04 * R], fill=(255, 255, 255))
+        yb = ey - 0.34 * R
+        din, dout = {"angry": (0.1, -0.04), "sad": (-0.1, 0.04), "worried": (-0.1, 0.04), "surprised": (-0.1, -0.1)}.get(emo, (0, 0))
+        d.line([(hx + sg * (ex + 0.17 * R), yb + dout * R), (hx + sg * (ex - 0.14 * R), yb + din * R)], fill=OUTL, width=max(2, int(0.08 * R)))
+        d.ellipse([cx + sg * 0.08 * R - 0.12 * R, ey + 0.22 * R, cx + sg * 0.08 * R + 0.12 * R, ey + 0.32 * R], fill=(255, 140, 140, 90))
+    if L.get("scar"):
+        d.line([(hx - ex - 0.14 * R, ey - 0.52 * R), (hx - ex + 0.06 * R, ey - 0.36 * R)], fill=(200, 110, 110), width=max(2, int(0.05 * R)))
+    if L.get("glasses"):
+        gw = max(2, int(0.05 * R))
+        for sg in (-1, 1):
+            d.ellipse([hx + sg * ex - 0.24 * R, ey - 0.22 * R, hx + sg * ex + 0.24 * R, ey + 0.22 * R], outline=(60, 60, 74), width=gw)
+        d.line([(hx - ex + 0.24 * R, ey - 0.04 * R), (hx + ex - 0.24 * R, ey - 0.04 * R)], fill=(60, 60, 74), width=gw)
+    if L.get("beard"):
+        d.chord([hx - 0.72 * R, hy + 0.2 * R, hx + 0.72 * R, hy + 1.02 * R], 0, 180, fill=L["hair"], outline=OUTL, width=ow)
+    my = hy + 0.56 * R
+    mw = max(2, int(0.07 * R))
+    if L.get("mustache"):
+        for sg in (-1, 1):
+            d.chord([hx + (sg - 1) * 0.2 * R, my - 0.2 * R, hx + (sg + 1) * 0.2 * R, my + 0.02 * R], 180, 360, fill=L["hair"], outline=OUTL)
+    if talk:
+        o = abs(math.sin(t * 15)) * 0.22 * R + 0.05 * R
+        d.ellipse([hx - 0.16 * R, my - o / 2, hx + 0.16 * R, my + o / 2], fill=(130, 34, 46), outline=OUTL, width=mw)
+    elif emo == "worried":
+        pts = [(hx - 0.22 * R + k * 0.44 * R / 12, my + math.sin(k * math.pi / 3) * 0.05 * R) for k in range(13)]
+        d.line(pts, fill=OUTL, width=mw)
+    elif emo == "sad":
+        d.arc([hx - 0.2 * R, my - 0.02 * R, hx + 0.2 * R, my + 0.28 * R], 200, 340, fill=OUTL, width=mw)
+    elif emo == "surprised":
+        d.ellipse([hx - 0.08 * R, my - 0.1 * R, hx + 0.08 * R, my + 0.12 * R], fill=(130, 34, 46), outline=OUTL, width=mw)
+    elif emo in ("happy", "smug"):
+        d.chord([hx - 0.22 * R, my - 0.22 * R, hx + 0.22 * R, my + 0.16 * R], 10, 170, fill=(130, 34, 46), outline=OUTL, width=mw) if emo == "happy" \
+            else d.arc([hx - 0.24 * R, my - 0.26 * R, hx + 0.12 * R, my + 0.1 * R], 20, 150, fill=OUTL, width=mw)
+    else:
+        d.arc([hx - 0.15 * R, my - 0.14 * R, hx + 0.15 * R, my + 0.04 * R], 30, 150, fill=OUTL, width=mw)
+    return hx, hy, R
 
 
 def tower(img, d, cx, base, t, s=1.0, col=BLUE):
@@ -306,7 +456,8 @@ def persons(img, d, t, p):
         x = (q.get("x", 0.5) + q.get("vx", 0) * t) * W
         person(img, d, x, q.get("y", 860), q.get("s", 1.4), q["c"], t,
                run=q.get("run", False), kneel=q.get("kneel", False), reach=q.get("reach", False),
-               pack=q.get("pack", False), sit=q.get("sit", False))
+               pack=q.get("pack", False), sit=q.get("sit", False), emo=q.get("emo", "neutral"),
+               seed=int(q.get("x", 0.5) * 100))
 
 
 def orb_from(img, d, t, p):
@@ -428,32 +579,20 @@ def sc_map(img, d, t, p):
 
 def sc_close(img, d, t, p):
     img.paste(BOKEH, (int(-10 * t), 0), BOKEH)
-    c = CHARS[p["c"]]
-    b, light = c["body"], p.get("light", c["rim"])
-    d.ellipse([20, 720, 520, 1300], fill=b, outline=light, width=5)
-    d.rectangle([225, 600, 315, 760], fill=b)
-    d.ellipse([150, 250, 390, 620], fill=b, outline=light, width=6)
-    d.chord([150, 250, 390, 620], 200, 340, fill=tuple(int(v * 0.6) for v in b))
-    d.pieslice([150, 250, 390, 620], 300, 60, fill=light + (40,))
-    for ex in (215, 325):
-        d.ellipse([ex - 12, 440, ex + 12, 456], fill=light + (200,))
-        d.ellipse([ex - 3, 444, ex + 3, 452], fill=(255, 255, 255))
-    if p["c"] == "lena":
-        d.line([(195, 412), (225, 404)], fill=(220, 160, 160), width=3)
-    if p["c"] == "max":
-        d.chord([180, 470, 360, 640], 0, 180, fill=(190, 95, 40))
-    if p.get("glasses"):
-        for gx in (215, 325):
-            d.rounded_rectangle([gx - 42, 422, gx + 42, 474], radius=10, outline=(210, 210, 220), width=4)
-        d.line([(257, 440), (283, 440)], fill=(210, 210, 220), width=4)
-        if p.get("logo") and t > 4:
-            a = int(255 * tri(t, 4, 5))
-            d.rounded_rectangle([177, 426, 253, 470], radius=8, fill=RED + (a // 3,))
-            d.text((200, 428), "N", font=F_MID, fill=RED + (a,))
+    ch = p["c"]
+    light = p.get("light", (255, 210, 150))
+    d.ellipse([W / 2 - 330, 180, W / 2 + 330, 840], fill=light + (45,))
+    hx, hy, R = person(img, d, W / 2, H + 380, 4.2, ch, t, emo=p.get("emo", "neutral"), seed=3)
+    ex, ey = 0.36 * R, hy + 0.1 * R
+    if p.get("logo") and t > 4:
+        a = int(255 * tri(t, 4, 5))
+        d.ellipse([hx - ex - 0.23 * R, ey - 0.21 * R, hx - ex + 0.23 * R, ey + 0.21 * R], fill=RED + (a // 2,))
+        d.text((hx - ex, ey), "N", font=F_MID, anchor="mm", fill=(255, 255, 255, a))
     if p.get("tears"):
-        for k, ex in enumerate((215, 325)):
-            ty = 460 + ((t * 40 + k * 70) % 140)
-            d.ellipse([ex - 4, ty - 6, ex + 4, ty + 6], fill=(150, 200, 255, 200))
+        for k, sg in enumerate((-1, 1)):
+            ty = ey + 0.2 * R + ((t * 60 + k * 50) % (0.6 * R))
+            x_ = hx + sg * ex
+            d.ellipse([x_ - 9, ty - 13, x_ + 9, ty + 13], fill=(140, 200, 255, 220), outline=OUTL, width=2)
     orb_from(img, d, t, p)
 
 
@@ -470,8 +609,8 @@ def sc_market(img, d, t, p):
         lx = 30 + k * 60
         d.ellipse([lx - 7, 430 + 10 * math.sin(k), lx + 7, 444 + 10 * math.sin(k)], fill=(255, 190, 90, 220))
     crowd = [(rnd.uniform(0, 1), rnd.uniform(0.6, 1.05), rnd.uniform(-0.04, 0.04)) for _ in range(16)]
-    for x, s, vx in sorted(crowd, key=lambda c: c[1]):
-        person(img, d, ((x + vx * t) % 1.1 - 0.05) * W, 700 + (s - 0.6) * 380, s * 1.3, "crowd")
+    for i, (x, s, vx) in sorted(enumerate(crowd), key=lambda c: c[1][1]):
+        person(img, d, ((x + vx * t) % 1.1 - 0.05) * W, 700 + (s - 0.6) * 380, s * 1.1, "crowd", t, seed=i)
     if p.get("agents"):
         for k, ax in enumerate((0.12, 0.88)):
             x = ax * W
@@ -692,6 +831,34 @@ DEFAULT_SKY = dict(city="night", interior="dark", photo="dark", map="dark", clos
 OUTDOOR = {"city", "market", "roofs", "antenna", "train"}
 
 
+# ---------------------------------------------------------------- «киношная» обработка
+GRAIN = np.random.default_rng(42).normal(0, 1, (8, H, W)).astype(np.float32)
+
+
+def cinematic(img, t, gt, shot_i):
+    # 1) медленный наезд камеры + лёгкая тряска «с рук»
+    z = 1.0 + 0.06 * (t / SHOT) + (0.03 if shot_i % 2 else 0.0)
+    sx = 4 * math.sin(gt * 1.7) + 2 * math.sin(gt * 4.3)
+    sy = 3 * math.cos(gt * 1.3) + 2 * math.sin(gt * 3.7)
+    cw, ch = W / z, H / z
+    x0, y0 = (W - cw) / 2 + sx, (H - ch) / 2 + sy
+    img = img.transform((W, H), Image.EXTENT, (x0, y0, x0 + cw, y0 + ch), Image.BILINEAR)
+    a = np.asarray(img, dtype=np.float32) / 255
+    # 2) свечение ярких источников (bloom)
+    small = img.resize((W // 4, H // 4), Image.BILINEAR).filter(ImageFilter.GaussianBlur(6))
+    b = np.asarray(small.resize((W, H), Image.BILINEAR), dtype=np.float32) / 255
+    a = 1 - (1 - a) * (1 - np.clip(b - 0.25, 0, 1) * 0.9)
+    # 3) цветокоррекция teal & orange + мягкий контраст
+    lum = a.mean(axis=2, keepdims=True)
+    a = a + (np.array([0.05, 0.02, -0.04]) * lum + np.array([-0.02, 0.02, 0.05]) * (1 - lum))
+    a = np.clip(a, 0, 1)
+    a = a * a * (3 - 2 * a) * 0.35 + a * 0.65
+    a = 0.035 + a * 0.95  # приподнятые «плёночные» тени
+    # 4) плёночное зерно
+    a = a + GRAIN[int(gt * FPS) % 8][..., None] * 0.012
+    return Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+
+
 # ---------------------------------------------------------------- оверлеи
 def glow_text(d, xy, txt, font, col, a=1.0, anchor="mm"):
     big = font.size > 60
@@ -700,36 +867,80 @@ def glow_text(d, xy, txt, font, col, a=1.0, anchor="mm"):
     d.text(xy, txt, font=font, anchor=anchor, fill=(255, 255, 255, int(255 * a)))
 
 
-def subtitle(d, spk, txt, a):
-    lines = textwrap.wrap(txt, 30)
-    boxh = 36 * len(lines) + (32 if spk else 0) + 26
-    y0 = H - 80 - boxh
-    d.rounded_rectangle([28, y0, W - 28, y0 + boxh], radius=14, fill=(0, 0, 0, int(160 * a)))
-    y = y0 + 13
-    if spk:
-        d.text((48, y), spk.upper(), font=F_NAME, fill=SPEAKER[spk] + (int(255 * a),))
-        y += 32
+CAP_COL = {"Лена": (255, 255, 255), "Эхо": (120, 215, 255), "Макс": (255, 190, 80), "Вейн": (255, 175, 200),
+           "Отец": (255, 225, 70), None: (255, 225, 70)}
+DUR = {}  # (серия, кадр) -> длительность реплики, заполняется при синтезе голоса
+
+
+def chunks(txt):
+    words, out, cur = txt.split(), [], []
+    for w in words:
+        if cur and (len(" ".join(cur + [w])) > 15 or len(cur) >= 3):
+            out.append(" ".join(cur))
+            cur = []
+        cur.append(w)
+    if cur:
+        out.append(" ".join(cur))
+    return out
+
+
+def stroke_text(d, xy, txt, font, col, sw=6, a=1.0):
+    d.text(xy, txt, font=font, anchor="mm", fill=col + (int(255 * a),), stroke_width=sw, stroke_fill=(12, 10, 20, int(255 * a)))
+
+
+def caption(d, spk, txt, t, dur):
+    """Субтитры в стиле Shorts: крупно, заглавными, с обводкой, по 2–3 слова синхронно с речью."""
+    import re
+    txt = re.sub(r"\(.*?\)\s*", "", txt)
+    parts = chunks(txt.upper())
+    t0 = 0.9
+    if t < t0 - 0.25 or t > 9.3:
+        return
+    total = sum(len(c) + 2 for c in parts)
+    acc, idx = 0.0, len(parts) - 1
+    for i, c in enumerate(parts):
+        acc += (len(c) + 2) / total
+        if t < t0 + dur * acc:
+            idx = i
+            break
+    lines = textwrap.wrap(parts[idx], 13)
+    pop = 1.0
+    y = H * 0.78 - (len(lines) - 1) * 27
     for ln in lines:
-        d.text((48, y), ln, font=F_SUB, fill=(255, 255, 255, int(255 * a)))
-        y += 36
+        stroke_text(d, (W / 2, y), ln, F_CAP, CAP_COL.get(spk, (255, 255, 255)), 6, pop)
+        y += 54
+
+
+def hook(d, txt, a):
+    lines = textwrap.wrap(txt, 18)
+    y = 120 - (len(lines) - 1) * 22
+    for ln in lines:
+        stroke_text(d, (W / 2, y), ln, F_HOOK, (255, 214, 40), 5, a)
+        y += 46
 
 
 def render_frame(ep_i, shot_i, shot, t, gt):
     kind, p = shot["kind"], shot.get("p", {})
+    dur = DUR.get((ep_i, shot_i), len(shot.get("txt", "")) * 0.075)
+    SPEAK.update(char=CHAR_OF.get(shot.get("spk")), t0=0.9, t1=0.9 + dur)
     img = SKIES[p.get("sky", DEFAULT_SKY[kind])].copy()
     d = ImageDraw.Draw(img, "RGBA")
     SCENES[kind](img, d, t, p)
     if p.get("rain", kind in OUTDOOR):
         rain(d, gt)
+    img = cinematic(img, t, gt, shot_i)
     img.paste(VIG, (0, 0), VIG)
+    d = ImageDraw.Draw(img, "RGBA")
     ep = EPISODES[ep_i]
     if shot_i == 0 and t < 3.6:
         a = tri(t, 0.2, 0.9) * (1 - tri(t, 2.8, 3.6))
         d.rectangle([0, 0, W, H], fill=(0, 0, 0, int(120 * a)))
         glow_text(d, (W / 2, H / 2 - 60), "ЭХО", F_BIG, BLUE, a)
         glow_text(d, (W / 2, H / 2 + 50), f"СЕРИЯ {ep_i + 1} · {ep['title'].upper()}", F_MID, BLUE, a)
-    if shot.get("txt") and 0.6 < t < 9.5:
-        subtitle(d, shot.get("spk"), shot["txt"], tri(t, 0.6, 0.9) * (1 - tri(t, 9.2, 9.5)))
+    if ep.get("hook") and not (shot_i == 0 and t < 3.6) and not (shot.get("title") and t > 6.0):
+        hook(d, ep["hook"], tri(t, 3.6, 4.0) if shot_i == 0 else 1.0)
+    if shot.get("txt"):
+        caption(d, shot.get("spk"), shot["txt"], t, dur)
     if shot.get("title") and t > 6.0:
         a = tri(t, 6.0, 7.0)
         d.rectangle([0, 0, W, H], fill=(0, 0, 0, int(190 * a)))
@@ -840,6 +1051,7 @@ def voice_track(ep_i, n, sr):
             continue
         start = 0.9
         a = say(shot.get("spk"), shot["txt"], sr, SHOT - start - 1.0)
+        DUR[(ep_i, si)] = len(a) / sr
         s = int((si * SHOT + start) * sr)
         e = min(n, s + len(a))
         out[s:e] += a[: e - s]

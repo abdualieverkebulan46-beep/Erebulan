@@ -791,27 +791,39 @@ def music(ep_i, path, dur=90, sr=22050):
         w.writeframes((out * 32767).astype(np.int16).tobytes())
 
 
-# ---------------------------------------------------------------- озвучка (RHVoice)
-VOICES = {  # голос RHVoice, ffmpeg-фильтр
-    "Лена": ("victoria", "volume=1.1"),
-    "Эхо": ("aleksandr-hq", "asetrate=24000*0.94,aresample=24000,aecho=0.8:0.6:60|120:0.35|0.2"),
-    "Макс": ("artemiy", "volume=1.1"),
-    "Вейн": ("tatiana", "asetrate=24000*0.97,aresample=24000"),
-    "Отец": ("yuriy", "highpass=f=300,lowpass=f=3400,aecho=0.8:0.5:40:0.2"),
-    None: ("pavel", "volume=1.0"),
+# ---------------------------------------------------------------- озвучка (Silero)
+VOICES = {  # голос Silero v4 (нейросеть), ffmpeg-фильтр
+    "Лена": ("xenia", "volume=1.0"),
+    "Эхо": ("aidar", "aecho=0.8:0.6:60|120:0.3|0.15"),
+    "Макс": ("eugene", "volume=1.0"),
+    "Вейн": ("baya", "asetrate=48000*0.95,aresample=48000"),
+    "Отец": ("aidar", "asetrate=48000*0.9,aresample=48000,highpass=f=250,lowpass=f=3600,aecho=0.8:0.5:40:0.2"),
+    None: ("kseniya", "volume=1.0"),
 }
+SILERO = os.environ.get("SILERO_MODEL", "/root/silero/v4_ru.pt")  # https://models.silero.ai/models/tts/ru/v4_ru.pt
+_tts = None
+
+
+def silero():
+    global _tts
+    if _tts is None:
+        import torch
+        torch.set_num_threads(1)
+        _tts = torch.package.PackageImporter(SILERO).load_pickle("tts_models", "model")
+        _tts.to("cpu")
+    return _tts
 
 
 def say(spk, txt, sr, max_len):
     import re, tempfile
     whisper = "шёпотом" in txt
-    txt = re.sub(r"\(.*?\)\s*", "", txt).strip()
+    txt = re.sub(r"\(.*?\)\s*", "", txt).strip().replace("«", "").replace("»", "")
     voice, flt = VOICES.get(spk, VOICES[None])
     if whisper:
         flt += ",highpass=f=400,volume=0.6"
     with tempfile.TemporaryDirectory() as td:
         raw, fx = os.path.join(td, "raw.wav"), os.path.join(td, "fx.wav")
-        subprocess.run(["RHVoice-test", "-p", voice, "-o", raw], input=txt.encode(), check=True, capture_output=True)
+        silero().save_wav(text=txt, speaker=voice, sample_rate=48000, audio_path=raw, put_accent=True, put_yo=True)
         dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", raw]))
         if dur > max_len:
             flt += f",atempo={min(2.0, dur / max_len):.3f}"

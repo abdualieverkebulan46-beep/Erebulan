@@ -780,11 +780,59 @@ def music(ep_i, path, dur=90, sr=22050):
     noise = np.convolve(rnd.normal(0, 1, len(t)), np.ones(6) / 6, mode="same")
     out += 0.035 * noise
     out = out / np.max(np.abs(out)) * 0.8
+    voice, active = voice_track(ep_i, len(out), sr)
+    duck = np.convolve(active, np.ones(int(0.3 * sr)) / int(0.3 * sr), mode="same")
+    out = out * (1 - 0.6 * duck) * 0.75 + voice
+    out = np.clip(out / max(1.0, np.max(np.abs(out)) / 0.95), -1, 1)
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sr)
         w.writeframes((out * 32767).astype(np.int16).tobytes())
+
+
+# ---------------------------------------------------------------- озвучка (RHVoice)
+VOICES = {  # голос RHVoice, ffmpeg-фильтр
+    "Лена": ("victoria", "volume=1.1"),
+    "Эхо": ("aleksandr-hq", "asetrate=24000*0.94,aresample=24000,aecho=0.8:0.6:60|120:0.35|0.2"),
+    "Макс": ("artemiy", "volume=1.1"),
+    "Вейн": ("tatiana", "asetrate=24000*0.97,aresample=24000"),
+    "Отец": ("yuriy", "highpass=f=300,lowpass=f=3400,aecho=0.8:0.5:40:0.2"),
+    None: ("pavel", "volume=1.0"),
+}
+
+
+def say(spk, txt, sr, max_len):
+    import re, tempfile
+    whisper = "шёпотом" in txt
+    txt = re.sub(r"\(.*?\)\s*", "", txt).strip()
+    voice, flt = VOICES.get(spk, VOICES[None])
+    if whisper:
+        flt += ",highpass=f=400,volume=0.6"
+    with tempfile.TemporaryDirectory() as td:
+        raw, fx = os.path.join(td, "raw.wav"), os.path.join(td, "fx.wav")
+        subprocess.run(["RHVoice-test", "-p", voice, "-o", raw], input=txt.encode(), check=True, capture_output=True)
+        dur = float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", raw]))
+        if dur > max_len:
+            flt += f",atempo={min(2.0, dur / max_len):.3f}"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", raw, "-af", flt, "-ar", str(sr), "-ac", "1", fx], check=True)
+        with wave.open(fx) as w:
+            a = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
+    return a / max(1e-6, np.max(np.abs(a))) * 0.9
+
+
+def voice_track(ep_i, n, sr):
+    out, active = np.zeros(n), np.zeros(n)
+    for si, shot in enumerate(EPISODES[ep_i]["shots"]):
+        if not shot.get("txt"):
+            continue
+        start = 0.9
+        a = say(shot.get("spk"), shot["txt"], sr, SHOT - start - 1.0)
+        s = int((si * SHOT + start) * sr)
+        e = min(n, s + len(a))
+        out[s:e] += a[: e - s]
+        active[s:e] = 1
+    return out, active
 
 
 # ---------------------------------------------------------------- сборка

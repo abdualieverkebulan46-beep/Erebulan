@@ -1,1 +1,2 @@
 playlist/out/tracks/*.wav
+__pycache__/

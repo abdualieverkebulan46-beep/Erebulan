@@ -172,3 +172,50 @@ if __name__ == "__main__":
     for name, fn in (("clean", clean), ("night", night), ("morning", morning)):
         fn().resize((1920, 1080), Image.LANCZOS).save(os.path.join(OUT, f"cover_{name}.png"))
         print("saved", name)
+
+
+def dumbbell_top(img, cx, cy, ang=-12):
+    layer = Image.new("RGBA", (900 * S, 400 * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    mx, my = 450 * S, 200 * S
+    d.rounded_rectangle((mx - 230 * S, my - 16 * S, mx + 230 * S, my + 16 * S), 10 * S, fill=(150, 152, 158))
+    for k in range(-200, 200, 14):
+        d.line([(mx + k * S, my - 14 * S), (mx + k * S + 6 * S, my + 14 * S)], fill=(120, 122, 128), width=2 * S)
+    for side in (-1, 1):
+        for j, (w, h) in enumerate(((60, 230), (48, 190))):
+            x = mx + side * (250 + j * 58) * S
+            d.rounded_rectangle((x - w * S // 2, my - h * S // 2, x + w * S // 2, my + h * S // 2), 14 * S, fill=(28, 28, 30), outline=(60, 60, 64), width=3 * S)
+    layer = layer.rotate(ang, resample=Image.BICUBIC, expand=False)
+    sh = Image.new("L", layer.size, 0)
+    sh.paste(layer.split()[3].point(lambda a: 110 if a else 0))
+    sh = sh.filter(ImageFilter.GaussianBlur(16 * S))
+    x0, y0 = cx - 450 * S, cy - 200 * S
+    img.paste((0, 0, 0), (x0 + 10 * S, y0 + 22 * S), sh)
+    img.paste(layer, (x0, y0), layer)
+
+
+def shaker_top(img, cx, cy):
+    d = ImageDraw.Draw(img)
+    shadow(img, (cx - 95 * S, cy - 95 * S, cx + 95 * S, cy + 95 * S), 95 * S, 14, 90, (8, 16))
+    d.ellipse((cx - 95 * S, cy - 95 * S, cx + 95 * S, cy + 95 * S), fill=(18, 18, 20), outline=(60, 60, 66), width=4 * S)
+    d.ellipse((cx - 70 * S, cy - 70 * S, cx + 70 * S, cy + 70 * S), fill=(30, 30, 33))
+    d.ellipse((cx - 22 * S, cy - 22 * S, cx + 22 * S, cy + 22 * S), fill=(232, 92, 40))
+
+
+def gym():
+    base = vgrad(W, H, (58, 58, 60), (36, 36, 38)).convert("L")
+    noise = Image.effect_noise((W, H), 28).filter(ImageFilter.GaussianBlur(1.2 * S))
+    img = Image.blend(base, noise, 0.18).convert("RGB")
+    img = Image.blend(img, vgrad(W, H, (52, 50, 50), (30, 30, 32)), 0.55)
+    dumbbell_top(img, 900 * S, 420 * S)
+    headphones_top(img, 1600 * S, 380 * S, 0.9)
+    shaker_top(img, 300 * S, 470 * S)
+    title(img, "gym focus.", 820, (244, 244, 246), 124)
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((W // 2 - 70 * S, 980 * S, W // 2 + 70 * S, 990 * S), 5 * S, fill=(232, 92, 40))
+    return img
+
+
+if __name__ == "__main__":
+    gym().resize((1920, 1080), Image.LANCZOS).save(os.path.join(OUT, "cover_gym.png"))
+    print("saved gym")

@@ -156,12 +156,15 @@ STABS = {
     "hold":  [(0, 15)],
     "late":  [(2, 3), (7, 3), (13, 3)],
     "sparse": [(0, 3), (10, 5)],
+    "pump":  [(2, 1), (6, 1), (10, 1), (14, 1)],
+    "drive": [(2, 2), (5, 1), (8, 2), (11, 1), (14, 2)],
     "lazy":  [(3, 4), (11, 4)],
 }
 BASSES = {
     "off":   [(2, 2, 0), (6, 2, 0), (10, 2, 0), (14, 2, 12)],
     "walk":  [(0, 3, 0), (3, 2, 0), (8, 3, 0), (11, 2, 7), (14, 2, 12)],
     "long":  [(2, 4, 0), (10, 4, 0)],
+    "roll":  [(2, 1, 0), (3, 1, 0), (6, 1, 0), (7, 1, 12), (10, 1, 0), (11, 1, 0), (14, 1, 0), (15, 1, 7)],
     "bounce": [(0, 2, 0), (3, 1, 12), (6, 2, 0), (10, 2, 0), (13, 2, 7)],
 }
 PENTA_MIN = [0, 3, 5, 7, 10]
@@ -193,7 +196,23 @@ TRACKS_NIGHT = [
     dict(title="Still Awake",         key=44, bpm=112, prog="descend",  stab="hold",   bass="long",   bars_per_chord=2, lead=1, seed=29, dark=True),
     dict(title="Before Sunrise",      key=45, bpm=115, prog="minor_ii", stab="lazy",   bass="bounce", bars_per_chord=2, lead=0, seed=30, dark=True),
 ]
-PLAYLISTS = {"locked_in": (TRACKS, OUT), "late_night": (TRACKS_NIGHT, os.path.join(os.path.dirname(OUT), "late_night", "tracks"))}
+# playlist #3 — "gym focus": faster, punchier, brighter, less reverb
+TRACKS_GYM = [
+    dict(title="First Set",           key=45, bpm=126, prog="minor4",   stab="pump",  bass="roll",   bars_per_chord=1, lead=0, seed=41, gym=True),
+    dict(title="Pre-Workout",         key=43, bpm=127, prog="vamp",     stab="drive", bass="roll",   bars_per_chord=2, lead=0, seed=42, gym=True),
+    dict(title="Heavy Day",           key=40, bpm=125, prog="minor_ii", stab="off",   bass="bounce", bars_per_chord=1, lead=0, seed=43, gym=True),
+    dict(title="No Excuses",          key=46, bpm=128, prog="lowvamp",  stab="pump",  bass="roll",   bars_per_chord=2, lead=0, seed=44, gym=True),
+    dict(title="Progressive Overload", key=44, bpm=126, prog="dorian",  stab="skip",  bass="walk",   bars_per_chord=1, lead=0, seed=45, gym=True),
+    dict(title="Last Rep Counts",     key=41, bpm=127, prog="descend",  stab="drive", bass="roll",   bars_per_chord=1, lead=0, seed=46, gym=True),
+    dict(title="Iron Discipline",     key=47, bpm=125, prog="minor4",   stab="push",  bass="bounce", bars_per_chord=2, lead=0, seed=47, gym=True),
+    dict(title="Sweat Equity",        key=42, bpm=128, prog="major4",   stab="pump",  bass="roll",   bars_per_chord=1, lead=0, seed=48, gym=True),
+    dict(title="Beast Mode Quietly",  key=45, bpm=126, prog="minor_ii", stab="drive", bass="walk",   bars_per_chord=2, lead=0, seed=49, gym=True),
+    dict(title="Push Day",            key=43, bpm=127, prog="vamp",     stab="off",   bass="roll",   bars_per_chord=1, lead=0, seed=50, gym=True),
+    dict(title="Cooldown Earned",     key=48, bpm=124, prog="major4",   stab="skip",  bass="bounce", bars_per_chord=2, lead=0, seed=51, gym=True),
+]
+
+PLAYLISTS = {"locked_in": (TRACKS, OUT), "late_night": (TRACKS_NIGHT, os.path.join(os.path.dirname(OUT), "late_night", "tracks")),
+             "gym": (TRACKS_GYM, os.path.join(os.path.dirname(OUT), "gym", "tracks"))}
 
 # bus gains (balanced so chords sit ~8-10 dB under the low end, like real house)
 MIX = dict(kick=0.7, bass=0.6, clap=1.0, hatL=1.1, hatR=1.1, stabs=4.0, pad=4.0, lead=2.5, keys=4.5, fx=1.0)
@@ -244,6 +263,7 @@ def render(job):
     tracks, outdir = PLAYLISTS[plname]
     cfg = tracks[idx]
     dark = cfg.get("dark", False)
+    gym = cfg.get("gym", False)
     rng = np.random.default_rng(cfg["seed"])
     bpm = cfg["bpm"]
     beat = 60.0 / bpm
@@ -256,9 +276,9 @@ def render(job):
     chords, roots = PROGS[cfg["prog"]]
     key = cfg["key"]
     bpc = cfg["bars_per_chord"]
-    swing = (0.18 + 0.08 * rng.random()) if dark else (0.12 + 0.08 * rng.random())
+    swing = 0.04 if gym else (0.18 + 0.08 * rng.random()) if dark else (0.12 + 0.08 * rng.random())
     tone = int(rng.integers(0, 3))
-    bright = (0.45 + 0.3 * rng.random()) if dark else (0.7 + 0.5 * rng.random())
+    bright = 1.25 if gym else (0.45 + 0.3 * rng.random()) if dark else (0.7 + 0.5 * rng.random())
 
     scale = PENTA_MAJ if cfg["prog"] == "major4" else PENTA_MIN
     motif = []
@@ -274,7 +294,7 @@ def render(job):
         return int(tt * SR)
 
     for b, sec in enumerate(secs):
-        on = lambda layer: sec in LAYERS[layer]
+        on = lambda layer: sec in LAYERS[layer] or (gym and layer in ("ohat", "clap") and sec in ("groove", "groove2", "build"))
         ci = (b // bpc) % len(chords)
         chord = tuple(key + 12 + c for c in chords[ci])
         root = key - 12 + roots[ci]
@@ -283,7 +303,7 @@ def render(job):
             if sec == "build" and b % 8 >= 6:
                 beats = list(range(0, 16, 2))
             for s in beats:
-                place(bus["kick"], kick(tone), st(b, s))
+                place(bus["kick"], kick(tone), st(b, s), 1.15 if gym else 1.0)
         if on("clap"):
             for s in (4, 12):
                 place(bus["clap"], clap(tone), st(b, s), 0.9)
@@ -361,13 +381,13 @@ def render(job):
 
     send = bus["stabs"] * 0.5 + bus["pad"] * 0.8 + bus["lead"] * 0.6 + bus["clap"] * 0.35 + bus["keys"] * 0.6
     send = hp(send, 250)
-    L += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 101))[:N] * (0.45 if dark else 0.35)
-    R += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 202))[:N] * (0.45 if dark else 0.35)
+    L += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 101))[:N] * (0.45 if dark else 0.2 if gym else 0.35)
+    R += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 202))[:N] * (0.45 if dark else 0.2 if gym else 0.35)
 
     # vinyl texture
     crackle = np.zeros(N)
     pos = rng.integers(0, N, size=int(N / SR * 9))
-    crackle[pos] = rng.uniform(-1, 1, len(pos)) * (0.18 if dark else 0.12)
+    crackle[pos] = rng.uniform(-1, 1, len(pos)) * (0.18 if dark else 0.0 if gym else 0.12)
     crackle = bp(crackle, 1000, 8000) + lp(rng.standard_normal(N), 3000) * 0.0025
     L += crackle; R += np.roll(crackle, 300)
 
@@ -394,8 +414,9 @@ def render(job):
 
     # master: loudness to ~-14 LUFS-ish, soft clip, fades
     rms = np.sqrt(np.mean(st_ ** 2))
-    st_ *= 0.16 / rms
-    st_ = np.tanh(st_ * 1.05) / np.tanh(1.05)
+    st_ *= (0.18 if gym else 0.16) / rms
+    drive = 1.3 if gym else 1.05
+    st_ = np.tanh(st_ * drive) / np.tanh(drive)
     st_ *= 0.95 / np.max(np.abs(st_))
     fi, fo = int(1.5 * SR), int(4 * SR)
     st_[:, :fi] *= np.linspace(0, 1, fi)

@@ -4,8 +4,9 @@
 Every track is synthesized from scratch with numpy (no samples), so the
 music is 100% original and safe from YouTube Content ID claims.
 
-Usage:  python3 playlist/music.py            # render all tracks
-        python3 playlist/music.py 3 7        # only tracks 3 and 7
+Usage:  python3 playlist/music.py                 # playlist #1 (locked_in), all tracks
+        python3 playlist/music.py late_night      # playlist #2
+        python3 playlist/music.py late_night 3 7  # only tracks 3 and 7
 """
 import os, sys, wave
 from functools import lru_cache
@@ -144,6 +145,8 @@ PROGS = {
     "vamp":   ([(0, 3, 7, 10, 14), (5, 8, 12, 15, 19)], [0, 5]),
     "major4": ([(0, 4, 7, 11, 14), (-3, 0, 4, 7, 11), (2, 5, 9, 12, 16), (-5, 0, 2, 7, 11)], [0, -3, 2, -5]),
     "descend": ([(0, 3, 7, 10, 14), (-2, 2, 5, 9, 12), (-4, 0, 3, 7, 10), (-5, -2, 2, 5, 9)], [0, -2, -4, -5]),
+    "minor_ii": ([(0, 3, 7, 10, 14), (-4, 0, 3, 7, 10), (5, 8, 12, 15, 19), (7, 10, 14, 17)], [0, -4, 5, 7]),
+    "lowvamp": ([(0, 3, 7, 10, 14), (-2, 2, 5, 9, 12)], [0, -2]),
     "dorian": ([(0, 3, 7, 10, 14), (2, 5, 9, 12, 17), (0, 3, 7, 10, 14), (5, 9, 12, 16, 19)], [0, 2, 0, 5]),
 }
 STABS = {
@@ -152,6 +155,8 @@ STABS = {
     "skip":  [(3, 2), (7, 2), (11, 2), (14, 2)],
     "hold":  [(0, 15)],
     "late":  [(2, 3), (7, 3), (13, 3)],
+    "sparse": [(0, 3), (10, 5)],
+    "lazy":  [(3, 4), (11, 4)],
 }
 BASSES = {
     "off":   [(2, 2, 0), (6, 2, 0), (10, 2, 0), (14, 2, 12)],
@@ -174,6 +179,21 @@ TRACKS = [
     dict(title="Silent Progress",    key=45, bpm=121, prog="descend", stab="skip", bass="off",    bars_per_chord=1, lead=0, seed=9),
     dict(title="Earn Your Weekend",  key=43, bpm=123, prog="dorian",  stab="late", bass="bounce", bars_per_chord=2, lead=1, seed=10),
 ]
+
+# playlist #2 — "late night focus": slower, darker, more space
+TRACKS_NIGHT = [
+    dict(title="After Hours",         key=45, bpm=114, prog="lowvamp",  stab="sparse", bass="long",   bars_per_chord=2, lead=1, seed=21, dark=True),
+    dict(title="City Lights Off",     key=42, bpm=116, prog="minor_ii", stab="lazy",   bass="off",    bars_per_chord=1, lead=0, seed=22, dark=True),
+    dict(title="Midnight Draft",      key=47, bpm=112, prog="descend",  stab="sparse", bass="walk",   bars_per_chord=2, lead=1, seed=23, dark=True),
+    dict(title="3AM Clarity",         key=44, bpm=115, prog="vamp",     stab="hold",   bass="long",   bars_per_chord=2, lead=0, seed=24, dark=True),
+    dict(title="Nobody's Watching",   key=41, bpm=117, prog="minor_ii", stab="off",    bass="bounce", bars_per_chord=1, lead=1, seed=25, dark=True),
+    dict(title="Blue Screen Glow",    key=46, bpm=113, prog="lowvamp",  stab="lazy",   bass="off",    bars_per_chord=2, lead=0, seed=26, dark=True),
+    dict(title="Quiet Hours",         key=43, bpm=114, prog="dorian",   stab="sparse", bass="long",   bars_per_chord=2, lead=1, seed=27, dark=True),
+    dict(title="Night Shift Mind",    key=48, bpm=116, prog="minor4",   stab="late",   bass="walk",   bars_per_chord=1, lead=0, seed=28, dark=True),
+    dict(title="Still Awake",         key=44, bpm=112, prog="descend",  stab="hold",   bass="long",   bars_per_chord=2, lead=1, seed=29, dark=True),
+    dict(title="Before Sunrise",      key=45, bpm=115, prog="minor_ii", stab="lazy",   bass="bounce", bars_per_chord=2, lead=0, seed=30, dark=True),
+]
+PLAYLISTS = {"locked_in": (TRACKS, OUT), "late_night": (TRACKS_NIGHT, os.path.join(os.path.dirname(OUT), "late_night", "tracks"))}
 
 # bus gains (balanced so chords sit ~8-10 dB under the low end, like real house)
 MIX = dict(kick=0.7, bass=0.6, clap=1.0, hatL=1.1, hatR=1.1, stabs=4.0, pad=4.0, lead=2.5, keys=4.5, fx=1.0)
@@ -219,8 +239,11 @@ def reverb_ir(seconds, seed):
     return ir / np.sqrt(np.sum(ir ** 2))
 
 
-def render(idx):
-    cfg = TRACKS[idx]
+def render(job):
+    plname, idx = job
+    tracks, outdir = PLAYLISTS[plname]
+    cfg = tracks[idx]
+    dark = cfg.get("dark", False)
     rng = np.random.default_rng(cfg["seed"])
     bpm = cfg["bpm"]
     beat = 60.0 / bpm
@@ -233,9 +256,9 @@ def render(idx):
     chords, roots = PROGS[cfg["prog"]]
     key = cfg["key"]
     bpc = cfg["bars_per_chord"]
-    swing = 0.12 + 0.08 * rng.random()
+    swing = (0.18 + 0.08 * rng.random()) if dark else (0.12 + 0.08 * rng.random())
     tone = int(rng.integers(0, 3))
-    bright = 0.7 + 0.5 * rng.random()
+    bright = (0.45 + 0.3 * rng.random()) if dark else (0.7 + 0.5 * rng.random())
 
     scale = PENTA_MAJ if cfg["prog"] == "major4" else PENTA_MIN
     motif = []
@@ -284,7 +307,7 @@ def render(idx):
             for s, ln in STABS[cfg["stab"]]:
                 place(bus["stabs"], rhodes(chord, round(ln * step, 3), round(bright, 2)), st(b, s))
         if on("pad") and b % bpc == 0:
-            place(bus["pad"], pad(chord, round(bar * bpc + 0.4, 3)), int(b * bar * SR))
+            place(bus["pad"], pad(chord, round(bar * bpc + 0.4, 3), 900 if dark else 1400), int(b * bar * SR))
         if on("keys") and b % bpc == 0:
             place(bus["keys"], rhodes(chord, round(bar * bpc, 3), round(bright, 2)), int(b * bar * SR), 1.4)
         if on("lead"):
@@ -338,13 +361,13 @@ def render(idx):
 
     send = bus["stabs"] * 0.5 + bus["pad"] * 0.8 + bus["lead"] * 0.6 + bus["clap"] * 0.35 + bus["keys"] * 0.6
     send = hp(send, 250)
-    L += fftconvolve(send, reverb_ir(2.4, 101))[:N] * 0.35
-    R += fftconvolve(send, reverb_ir(2.4, 202))[:N] * 0.35
+    L += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 101))[:N] * (0.45 if dark else 0.35)
+    R += fftconvolve(send, reverb_ir(3.4 if dark else 2.4, 202))[:N] * (0.45 if dark else 0.35)
 
     # vinyl texture
     crackle = np.zeros(N)
     pos = rng.integers(0, N, size=int(N / SR * 9))
-    crackle[pos] = rng.uniform(-1, 1, len(pos)) * 0.12
+    crackle[pos] = rng.uniform(-1, 1, len(pos)) * (0.18 if dark else 0.12)
     crackle = bp(crackle, 1000, 8000) + lp(rng.standard_normal(N), 3000) * 0.0025
     L += crackle; R += np.roll(crackle, 300)
 
@@ -380,8 +403,8 @@ def render(idx):
     st_ = st_[:, :end]
     st_[:, -fo:] *= np.linspace(1, 0, fo)
 
-    os.makedirs(OUT, exist_ok=True)
-    path = os.path.join(OUT, f"{idx + 1:02d}.wav")
+    os.makedirs(outdir, exist_ok=True)
+    path = os.path.join(outdir, f"{idx + 1:02d}.wav")
     pcm = (st_.T * 32767).astype(np.int16)
     with wave.open(path, "wb") as f:
         f.setnchannels(2); f.setsampwidth(2); f.setframerate(SR)
@@ -390,7 +413,10 @@ def render(idx):
 
 
 if __name__ == "__main__":
-    ids = [int(a) - 1 for a in sys.argv[1:]] or list(range(len(TRACKS)))
+    args = sys.argv[1:]
+    pl = args.pop(0) if args and args[0] in PLAYLISTS else "locked_in"
+    tracks = PLAYLISTS[pl][0]
+    ids = [int(a) - 1 for a in args] or list(range(len(tracks)))
     with Pool(min(4, len(ids))) as p:
-        for i, title, dur in p.imap_unordered(render, ids):
+        for i, title, dur in p.imap_unordered(render, [(pl, i) for i in ids]):
             print(f"{i + 1:02d} {title:<24} {int(dur // 60)}:{int(dur % 60):02d}", flush=True)

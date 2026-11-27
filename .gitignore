@@ -1,2 +1,4 @@
 playlist/out/tracks/*.wav
 __pycache__/
+playlist/out/**/*.wav
+playlist/out/**/*.m4a
